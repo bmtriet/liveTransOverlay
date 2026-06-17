@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LiveTranslate Overlay",
+  "version": "0.1.0",
+  "identifier": "com.livetranslate.overlay",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      { "label": "main", "title": "LiveTranslate Overlay", "width": 1280, "height": 820, "minWidth": 900, "minHeight": 650, "center": true },
+      { "label": "overlay", "title": "LiveTranslate Subtitles", "url": "index.html?overlay=true", "width": 1300, "height": 380, "x": 70, "y": 560, "transparent": true, "decorations": false, "alwaysOnTop": true, "skipTaskbar": true, "focus": false, "visible": false, "shadow": false }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    }
+  }
+}
