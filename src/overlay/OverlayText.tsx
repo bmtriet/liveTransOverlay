@@ -6,10 +6,9 @@ interface OverlayTextProps {
   sourceText?: string;
   translatedText: string;
   settings: OverlaySettings;
-  nonce: number;
 }
 
-export function OverlayText({ sourceText, translatedText, settings, nonce }: OverlayTextProps) {
+export function OverlayText({ sourceText, translatedText, settings }: OverlayTextProps) {
   const totalLines = Math.min(5, Math.max(2, settings.maxLines));
   const showSource = Boolean(settings.bilingualEnabled && sourceText);
   const translationLines = showSource ? totalLines - 1 : totalLines;
@@ -28,7 +27,7 @@ export function OverlayText({ sourceText, translatedText, settings, nonce }: Ove
     textShadow: settings.shadowEnabled ? "0 2px 10px rgba(0,0,0,.75)" : undefined,
   };
 
-  return <div key={nonce} className={`overlay-text animation-${settings.animation}`} style={containerStyle}>
+  return <div className={`overlay-text animation-${settings.animation}`} style={containerStyle}>
     {showSource && sourceText ? <TailCaption className="overlay-source" style={sourceStyle} text={sourceText} maxLines={1} lineHeight={1.32} /> : null}
     <TailCaption className="overlay-translation" style={translatedStyle} text={translatedText} maxLines={translationLines} lineHeight={1.22} />
   </div>;

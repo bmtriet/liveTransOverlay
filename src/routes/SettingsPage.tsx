@@ -192,6 +192,12 @@ export function SettingsPage({
                 </button>
               </div>
             </label>
+            {draft.mode === "auto-bidirectional" ? (
+              <div className="cost-warning full">
+                <CircleAlert size={17} />
+                <span><strong>Higher API usage</strong> Auto bidirectional runs two Live sessions at once. Fixed direction is recommended; switch the language pair instantly from the overlay.</span>
+              </div>
+            ) : null}
             <div className="full microphone-permission">
               <div>
                 <span className="field-label">Microphone permission</span>

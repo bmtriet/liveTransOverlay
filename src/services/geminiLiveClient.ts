@@ -35,6 +35,7 @@ interface LiveConnection {
   setupComplete: boolean;
   sourceText: string;
   translatedText: string;
+  finalizeTimer?: number;
 }
 
 export class GeminiLiveClient {
@@ -73,8 +74,6 @@ export class GeminiLiveClient {
         model: `models/${settings.model}`,
         generationConfig: {
           responseModalities: ["AUDIO"],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
           translationConfig: {
             targetLanguageCode: LIVE_TRANSLATE_LANGUAGE_CODES[direction.targetLanguage],
             // Each bidirectional connection should stay silent when speech is
@@ -82,6 +81,8 @@ export class GeminiLiveClient {
             echoTargetLanguage: false,
           },
         },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
       }};
       const endpoint = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(settings.geminiApiKey)}`;
       const socket = new WebSocket(endpoint);
@@ -177,9 +178,28 @@ export class GeminiLiveClient {
       });
     }
     if (shouldFinalize) {
-      connection.sourceText = "";
-      connection.translatedText = "";
+      this.resetTurn(connection);
+    } else if (nextText.trim()) {
+      window.clearTimeout(connection.finalizeTimer);
+      // Live Translate can stream usable output without a turnComplete event.
+      // Treat a short quiet period as the end of the caption so it is persisted.
+      connection.finalizeTimer = window.setTimeout(() => {
+        if (!connection.translatedText) return;
+        handlers.onText(connection.translatedText, true, {
+          sourceText: connection.sourceText || undefined,
+          sourceLanguage: connection.sourceLanguage,
+          targetLanguage: connection.targetLanguage,
+        });
+        this.resetTurn(connection);
+      }, 1400);
     }
+  }
+
+  private resetTurn(connection: LiveConnection) {
+    window.clearTimeout(connection.finalizeTimer);
+    connection.finalizeTimer = undefined;
+    connection.sourceText = "";
+    connection.translatedText = "";
   }
 
   sendAudio(chunk: Uint8Array) {
@@ -209,6 +229,7 @@ export class GeminiLiveClient {
   close() {
     this.closing = true;
     for (const connection of this.connections) {
+      window.clearTimeout(connection.finalizeTimer);
       if (connection.socket.readyState === WebSocket.OPEN && connection.ready) {
         if (this.audioBuffer.length) this.sendAudioMessage(connection, this.audioBuffer);
         connection.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));

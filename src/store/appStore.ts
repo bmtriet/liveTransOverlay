@@ -7,7 +7,7 @@ export const defaultSettings: AppSettings = {
   model: "gemini-3.5-live-translate-preview",
   sourceLanguage: "vi-VN",
   targetLanguage: "zh-CN",
-  mode: "auto-bidirectional",
+  mode: "fixed-direction",
   overlay: {
     position: "bottom-center", fontSize: 42, textColor: "#ffffff",
     strokeEnabled: true, strokeColor: "#000000", strokeWidth: 3,

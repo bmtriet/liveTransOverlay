@@ -49,3 +49,18 @@ export interface MeetingSession {
   settingsSnapshot: AppSettings;
   segments: TranscriptSegment[];
 }
+
+export interface OverlayUpdatePayload {
+  sourceText?: string;
+  translatedText: string;
+  final: boolean;
+  settings: OverlaySettings;
+  sourceLanguage: LanguageCode;
+  targetLanguage: LanguageCode;
+  switching?: boolean;
+}
+
+export interface TranslationSwitchRequest {
+  sourceLanguage: LanguageCode;
+  targetLanguage: LanguageCode;
+}

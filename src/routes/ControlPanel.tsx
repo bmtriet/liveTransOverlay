@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
-import { emitTo } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { ArrowUpRight, CircleStop, Eye, EyeOff, Mic, Play, Radio, Sparkles } from "lucide-react";
 import type { Route } from "../App";
@@ -12,6 +12,7 @@ import { recordDiagnostic } from "../services/diagnostics";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
 import { LANGUAGES } from "../utils/language";
+import type { AppSettings, OverlayUpdatePayload, TranslationSwitchRequest } from "../types";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -35,6 +36,8 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   const seedDemo = useSessionStore((state) => state.seedDemo);
   const audio = useRef(new AudioCapture());
   const client = useRef(new GeminiLiveClient());
+  const switching = useRef(false);
+  const lastOverlay = useRef({ translatedText: "Listening…", final: false, sourceText: undefined as string | undefined });
   const [starting, setStarting] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
 
@@ -44,10 +47,62 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   const latest = partialText || segments.at(-1)?.translatedText || "Your translated subtitles will appear here.";
   const bars = useMemo(() => Array.from({ length: 22 }, (_, i) => Math.min(1, audioLevel * 1.5 + (Math.sin(i * 1.7) + 1) * 0.08)), [audioLevel]);
 
-  const publishOverlay = async (translatedText: string, final = false, sourceText?: string) => {
+  const publishOverlay = useCallback(async (translatedText: string, final = false, sourceText?: string, runtimeSettings?: AppSettings, isSwitching = false) => {
     if (!isTauri()) return;
-    await emitTo("overlay", "overlay:update", { sourceText, translatedText, final, settings: settings.overlay });
-  };
+    const currentSettings = runtimeSettings ?? useAppStore.getState().settings;
+    lastOverlay.current = { sourceText, translatedText, final };
+    const payload: OverlayUpdatePayload = {
+      sourceText,
+      translatedText,
+      final,
+      settings: currentSettings.overlay,
+      sourceLanguage: currentSettings.sourceLanguage,
+      targetLanguage: currentSettings.targetLanguage,
+      switching: isSwitching,
+    };
+    await emitTo("overlay", "overlay:update", payload);
+  }, []);
+
+  const connectTranslation = useCallback(async (runtimeSettings: AppSettings) => {
+    await client.current.connect(runtimeSettings, {
+      onStatus: setConnection,
+      onText: (text, isFinal, result) => {
+        useSessionStore.getState().addText(text, isFinal, runtimeSettings, result.sourceText, result.sourceLanguage, result.targetLanguage);
+        void publishOverlay(text, isFinal, result.sourceText, runtimeSettings);
+      },
+    });
+  }, [publishOverlay, setConnection]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen<TranslationSwitchRequest>("translation:switch-requested", async ({ payload }) => {
+      if (!useSessionStore.getState().active || switching.current || payload.sourceLanguage === payload.targetLanguage) return;
+      switching.current = true;
+      const appState = useAppStore.getState();
+      const nextSettings: AppSettings = {
+        ...appState.settings,
+        sourceLanguage: payload.sourceLanguage,
+        targetLanguage: payload.targetLanguage,
+        mode: "fixed-direction",
+      };
+      appState.updateSettings(nextSettings);
+      await appState.save();
+      const previous = lastOverlay.current;
+      await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, true);
+      try {
+        await connectTranslation(nextSettings);
+        await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
+      } catch (switchError) {
+        const message = switchError instanceof Error ? switchError.message : "Could not switch translation direction.";
+        setConnection("error", message);
+        await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
+        await recordDiagnostic({ at: new Date().toISOString(), scope: "translation-switch", message, details: { sourceLanguage: payload.sourceLanguage, targetLanguage: payload.targetLanguage } });
+      } finally {
+        switching.current = false;
+      }
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, [connectTranslation, publishOverlay, setConnection]);
 
   const selectMicrophone = async (microphoneDeviceId: string) => {
     const next = { ...settings, microphoneDeviceId: microphoneDeviceId || undefined };
@@ -74,16 +129,10 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
         await invoke("set_overlay_click_through", { enabled: false });
         await overlay?.show();
         setOverlayVisible(true);
-        await publishOverlay("Listening…", false);
+        await publishOverlay("Listening…", false, undefined, settings);
         await getCurrentWindow().hide();
       }
-      await client.current.connect(settings, {
-        onStatus: setConnection,
-        onText: (text, isFinal, result) => {
-          addText(text, isFinal, settings, result.sourceText, result.sourceLanguage, result.targetLanguage);
-          void publishOverlay(text, isFinal, result.sourceText);
-        },
-      });
+      await connectTranslation(settings);
     } catch (startError) {
       await audio.current.stop();
       client.current.close();
@@ -141,7 +190,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       const overlay = await Window.getByLabel("overlay");
       await overlay?.show();
       await invoke("set_overlay_click_through", { enabled: false });
-      await publishOverlay("Hello, thank you for joining the meeting.", true, "Xin chào, cảm ơn bạn đã tham gia cuộc họp.");
+      await publishOverlay("Hello, thank you for joining the meeting.", true, "Xin chào, cảm ơn bạn đã tham gia cuộc họp.", settings);
     } else addText("你好，感谢你参加会议。", false, settings, "Xin chào, cảm ơn bạn đã tham gia cuộc họp.");
   };
 
