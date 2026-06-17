@@ -12,6 +12,7 @@ interface TranslationResult {
 interface LiveHandlers {
   onStatus: (status: "connecting" | "connected" | "error" | "idle", error?: string) => void;
   onText: (text: string, isFinal: boolean, result: TranslationResult) => void;
+  onInputTranscript?: (text: string, isFinal: boolean, languageCode?: string) => void;
 }
 
 type GeminiMessage = {
@@ -36,6 +37,7 @@ interface LiveConnection {
   sourceText: string;
   translatedText: string;
   finalizeTimer?: number;
+  intentionalClose: boolean;
 }
 
 export class GeminiLiveClient {
@@ -44,16 +46,12 @@ export class GeminiLiveClient {
   private closing = false;
   private audioBuffer = new Uint8Array(0);
 
-  async connect(settings: AppSettings, handlers: LiveHandlers): Promise<void> {
+  async connect(settings: AppSettings, handlers: LiveHandlers, replayAudio?: Uint8Array): Promise<void> {
     this.close();
     this.closing = false;
     this.setupReady = false;
-    const directions = settings.mode === "auto-bidirectional"
-      ? [
-          { sourceLanguage: settings.sourceLanguage, targetLanguage: settings.targetLanguage },
-          { sourceLanguage: settings.targetLanguage, targetLanguage: settings.sourceLanguage },
-        ]
-      : [{ sourceLanguage: settings.sourceLanguage, targetLanguage: settings.targetLanguage }];
+    this.audioBuffer = replayAudio?.slice() ?? new Uint8Array(0);
+    const directions = [{ sourceLanguage: settings.sourceLanguage, targetLanguage: settings.targetLanguage }];
 
     handlers.onStatus("connecting");
     await Promise.all(directions.map((direction) => this.connectDirection(settings, handlers, direction)));
@@ -93,11 +91,12 @@ export class GeminiLiveClient {
         setupComplete: false,
         sourceText: "",
         translatedText: "",
+        intentionalClose: false,
       };
       this.connections.push(connection);
 
       const fail = (message: string) => {
-        if (this.closing) return;
+        if (connection.intentionalClose) return;
         handlers.onStatus("error", message);
         if (!failureRecorded) {
           failureRecorded = true;
@@ -153,7 +152,7 @@ export class GeminiLiveClient {
       socket.onclose = (event) => {
         window.clearTimeout(timeout);
         connection.ready = false;
-        if (this.closing) return;
+        if (connection.intentionalClose) return;
         if (!connection.setupComplete) fail(event.reason || `Gemini closed the connection before setup completed (code ${event.code}).`);
         else handlers.onStatus("error", event.reason || "A Gemini translation direction closed unexpectedly.");
       };
@@ -170,6 +169,13 @@ export class GeminiLiveClient {
     if (nextText.trim()) connection.translatedText = mergeTranscript(connection.translatedText, nextText);
 
     const shouldFinalize = Boolean(content?.turnComplete || content?.interrupted);
+    if (content?.inputTranscription?.text) {
+      handlers.onInputTranscript?.(
+        connection.sourceText,
+        shouldFinalize,
+        content.inputTranscription.languageCode,
+      );
+    }
     if (connection.translatedText && (nextText.trim() || shouldFinalize)) {
       handlers.onText(connection.translatedText, shouldFinalize, {
         sourceText: connection.sourceText || undefined,
@@ -229,6 +235,7 @@ export class GeminiLiveClient {
   close() {
     this.closing = true;
     for (const connection of this.connections) {
+      connection.intentionalClose = true;
       window.clearTimeout(connection.finalizeTimer);
       if (connection.socket.readyState === WebSocket.OPEN && connection.ready) {
         if (this.audioBuffer.length) this.sendAudioMessage(connection, this.audioBuffer);

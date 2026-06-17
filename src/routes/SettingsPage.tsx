@@ -132,6 +132,13 @@ export function SettingsPage({
                 onChange={(e) => set("model", e.target.value)}
               />
             </label>
+            <label className="full">
+              <span>Language detector & summary model</span>
+              <input
+                value={draft.languageDetectorModel}
+                onChange={(e) => set("languageDetectorModel", e.target.value)}
+              />
+            </label>
           </div>
         </section>
         <section className="settings-section">
@@ -178,11 +185,11 @@ export function SettingsPage({
               <div className="segmented">
                 <button
                   className={
-                    draft.mode === "auto-bidirectional" ? "selected" : ""
+                    draft.mode === "smart-auto" ? "selected" : ""
                   }
-                  onClick={() => set("mode", "auto-bidirectional")}
+                  onClick={() => set("mode", "smart-auto")}
                 >
-                  Auto bidirectional
+                  Smart auto
                 </button>
                 <button
                   className={draft.mode === "fixed-direction" ? "selected" : ""}
@@ -192,10 +199,10 @@ export function SettingsPage({
                 </button>
               </div>
             </label>
-            {draft.mode === "auto-bidirectional" ? (
+            {draft.mode === "smart-auto" ? (
               <div className="cost-warning full">
                 <CircleAlert size={17} />
-                <span><strong>Higher API usage</strong> Auto bidirectional runs two Live sessions at once. Fixed direction is recommended; switch the language pair instantly from the overlay.</span>
+                <span><strong>Experimental language switching</strong> Smart Auto runs one Live session and uses Gemini 2.5 Flash-Lite to detect when the speaker changes language. A short reconnect delay is expected.</span>
               </div>
             ) : null}
             <div className="full microphone-permission">

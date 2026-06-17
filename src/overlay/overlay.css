@@ -4,19 +4,24 @@
 .position-bottom-center { justify-content: flex-end; }
 .position-top-center { justify-content: flex-start; }
 .position-custom { justify-content: center; }
-.drag-hint { opacity: 0; color: rgba(255,255,255,.8); background: rgba(5,14,22,.68); border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 5px 10px; display: flex; align-items: center; gap: 6px; font: 600 11px/1 ui-sans-serif, system-ui, sans-serif; transition: opacity .18s ease; }
-.overlay-root:hover .drag-hint { opacity: 1; }
-.translation-switcher { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; background: rgba(5,14,22,.82); box-shadow: 0 8px 24px rgba(0,0,0,.24); color: white; font: 600 11px/1 ui-sans-serif, system-ui, sans-serif; cursor: default; opacity: .72; transition: opacity .18s ease, transform .18s ease; }
+.resize-handle { position: absolute; bottom: 8px; right: 8px; width: 18px; height: 18px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 45%, rgba(255,255,255,0.45) 45%, rgba(255,255,255,0.45) 55%, transparent 55%, transparent 70%, rgba(255,255,255,0.45) 70%, rgba(255,255,255,0.45) 80%, transparent 80%); opacity: 0; transition: opacity .18s ease; z-index: 1000; }
+.overlay-root:hover .resize-handle { opacity: 0.75; }
+.resize-handle:hover { opacity: 1 !important; }
+.translation-switcher { display: flex; align-items: center; gap: 4px; padding: 4px 5px; border: 1px solid rgba(255,255,255,.16); border-radius: 10px; background: rgba(5,14,22,.82); box-shadow: 0 8px 24px rgba(0,0,0,.24); color: white; font: 600 10px/1 ui-sans-serif, system-ui, sans-serif; cursor: default; opacity: .72; transition: opacity .18s ease, transform .18s ease; }
+.home-button { width: 26px; height: 25px; display: grid; place-items: center; border: 0; border-radius: 6px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.72); cursor: pointer; transition: background 0.18s, color 0.18s, transform 0.18s; }
+.home-button:hover { background: rgba(255,255,255,0.18); color: white; transform: scale(1.04); }
+.home-button:active { transform: scale(0.96); }
+.switcher-divider { width: 1px; height: 15px; background: rgba(255,255,255,0.16); margin: 0 2px; }
 .translation-switcher:hover, .translation-switcher:focus-within { opacity: 1; transform: translateY(-1px); }
-.translation-switcher label { display: flex; align-items: center; gap: 5px; }
-.translation-switcher label > span { color: rgba(255,255,255,.58); text-transform: uppercase; font-size: 9px; letter-spacing: .08em; }
-.translation-switcher select { max-width: 150px; height: 28px; padding: 0 24px 0 8px; border: 1px solid rgba(255,255,255,.15); border-radius: 7px; background: rgba(255,255,255,.09); color: white; font: 650 11px/1 ui-sans-serif, system-ui, sans-serif; outline: none; }
+.translation-switcher label { display: flex; align-items: center; }
+.translation-switcher label > span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.translation-switcher select { width: 72px; height: 25px; padding: 0 18px 0 6px; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; background: rgba(255,255,255,.09); color: white; font: 700 10px/1 ui-sans-serif, system-ui, sans-serif; outline: none; }
 .translation-switcher select:focus { border-color: rgba(180,255,0,.72); box-shadow: 0 0 0 2px rgba(180,255,0,.15); }
-.translation-switcher button { width: 30px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 8px; background: #b8ff00; color: #071019; cursor: pointer; }
+.translation-switcher button { width: 26px; height: 25px; display: grid; place-items: center; border: 0; border-radius: 6px; background: #b8ff00; color: #071019; cursor: pointer; }
 .translation-switcher button:hover:not(:disabled) { background: #cbff45; transform: scale(1.04); }
 .translation-switcher button:disabled, .translation-switcher select:disabled { cursor: wait; opacity: .62; }
-.switch-status { min-width: 42px; padding: 5px 7px; border-radius: 999px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.62); text-align: center; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
-.switch-status.active { min-width: 76px; color: #d7ff78; }
+.switch-status { width: 25px; height: 25px; display:grid; place-items:center; border-radius: 6px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.72); }
+.switch-status.active { color: #d7ff78; }
 .switching-spinner { animation: switch-spin .8s linear infinite; }
 @keyframes switch-spin { to { transform: rotate(360deg) } }
 .overlay-content { opacity: 0; transition: opacity .25s ease; width: 100%; display: flex; justify-content: center; }

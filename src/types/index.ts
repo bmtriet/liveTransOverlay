@@ -1,6 +1,7 @@
 export type LanguageCode = "vi-VN" | "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "ko-KR";
-export type TranslationMode = "auto-bidirectional" | "fixed-direction";
+export type TranslationMode = "smart-auto" | "fixed-direction";
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
+export type SummaryStyle = "concise" | "standard" | "detailed";
 
 export interface OverlaySettings {
   position: "bottom-center" | "top-center" | "custom";
@@ -25,6 +26,7 @@ export interface OverlaySettings {
 export interface AppSettings {
   geminiApiKey: string;
   model: string;
+  languageDetectorModel: string;
   sourceLanguage: LanguageCode;
   targetLanguage: LanguageCode;
   mode: TranslationMode;
@@ -48,6 +50,24 @@ export interface MeetingSession {
   endedAt?: string;
   settingsSnapshot: AppSettings;
   segments: TranscriptSegment[];
+  directionChanges?: DirectionChange[];
+  summary?: MeetingSummary;
+}
+
+export interface DirectionChange {
+  timestamp: string;
+  sourceLanguage: LanguageCode;
+  targetLanguage: LanguageCode;
+  reason: "manual" | "smart-language-detection";
+  confidence?: number;
+}
+
+export interface MeetingSummary {
+  text: string;
+  language: LanguageCode;
+  style: SummaryStyle;
+  generatedAt: string;
+  model: string;
 }
 
 export interface OverlayUpdatePayload {
@@ -57,6 +77,7 @@ export interface OverlayUpdatePayload {
   settings: OverlaySettings;
   sourceLanguage: LanguageCode;
   targetLanguage: LanguageCode;
+  mode: TranslationMode;
   switching?: boolean;
 }
 

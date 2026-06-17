@@ -9,6 +9,8 @@ import { AudioCapture } from "../services/audioCapture";
 import { GeminiLiveClient } from "../services/geminiLiveClient";
 import { saveTranscript } from "../services/transcriptStore";
 import { recordDiagnostic } from "../services/diagnostics";
+import { SmartLanguageDetector } from "../services/smartLanguageDetector";
+import type { LanguageDecision } from "../services/geminiTextClient";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
 import { LANGUAGES } from "../utils/language";
@@ -36,12 +38,14 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   const seedDemo = useSessionStore((state) => state.seedDemo);
   const audio = useRef(new AudioCapture());
   const client = useRef(new GeminiLiveClient());
+  const detector = useRef(new SmartLanguageDetector());
+  const audioHistory = useRef(new Uint8Array(0));
   const switching = useRef(false);
+  const performSwitchRef = useRef<((request: TranslationSwitchRequest, mode: AppSettings["mode"], reason: "manual" | "smart-language-detection", confidence?: number) => Promise<void>) | null>(null);
   const lastOverlay = useRef({ translatedText: "Listening…", final: false, sourceText: undefined as string | undefined });
   const [starting, setStarting] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
 
-  useEffect(() => { if (!session) seedDemo(settings); }, [seedDemo, session, settings]);
   useEffect(() => { void audio.current.listDevices().then(setDevices).catch(() => setDevices([])); }, []);
   const segments = session?.segments ?? [];
   const latest = partialText || segments.at(-1)?.translatedText || "Your translated subtitles will appear here.";
@@ -58,51 +62,82 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       settings: currentSettings.overlay,
       sourceLanguage: currentSettings.sourceLanguage,
       targetLanguage: currentSettings.targetLanguage,
+      mode: currentSettings.mode,
       switching: isSwitching,
     };
     await emitTo("overlay", "overlay:update", payload);
   }, []);
 
-  const connectTranslation = useCallback(async (runtimeSettings: AppSettings) => {
+  const connectTranslation = useCallback(async (runtimeSettings: AppSettings, replayAudio?: Uint8Array) => {
     await client.current.connect(runtimeSettings, {
       onStatus: setConnection,
       onText: (text, isFinal, result) => {
         useSessionStore.getState().addText(text, isFinal, runtimeSettings, result.sourceText, result.sourceLanguage, result.targetLanguage);
         void publishOverlay(text, isFinal, result.sourceText, runtimeSettings);
       },
-    });
+      onInputTranscript: (text, _isFinal, languageCode) => {
+        detector.current.observe({ text, apiLanguageCode: languageCode, settings: runtimeSettings }, (decision: LanguageDecision) => {
+          void performSwitchRef.current?.(
+            { sourceLanguage: runtimeSettings.targetLanguage, targetLanguage: runtimeSettings.sourceLanguage },
+            "smart-auto",
+            "smart-language-detection",
+            decision.confidence,
+          );
+        });
+      },
+    }, replayAudio);
   }, [publishOverlay, setConnection]);
+
+  const performSwitch = useCallback(async (
+    request: TranslationSwitchRequest,
+    mode: AppSettings["mode"],
+    reason: "manual" | "smart-language-detection",
+    confidence?: number,
+  ) => {
+    if (!useSessionStore.getState().active || switching.current || request.sourceLanguage === request.targetLanguage) return;
+    switching.current = true;
+    detector.current.reset();
+    const appState = useAppStore.getState();
+    const nextSettings: AppSettings = {
+      ...appState.settings,
+      sourceLanguage: request.sourceLanguage,
+      targetLanguage: request.targetLanguage,
+      mode,
+    };
+    appState.updateSettings(nextSettings);
+    await appState.save();
+    useSessionStore.getState().addDirectionChange({
+      timestamp: new Date().toISOString(),
+      sourceLanguage: request.sourceLanguage,
+      targetLanguage: request.targetLanguage,
+      reason,
+      confidence,
+    });
+    const previous = lastOverlay.current;
+    await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, true);
+    try {
+      const replayAudio = audioHistory.current.slice(Math.max(0, audioHistory.current.length - 96_000));
+      await connectTranslation(nextSettings, replayAudio);
+      detector.current.markSwitched();
+      await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
+    } catch (switchError) {
+      const message = switchError instanceof Error ? switchError.message : "Could not switch translation direction.";
+      setConnection("error", message);
+      await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
+      await recordDiagnostic({ at: new Date().toISOString(), scope: "translation-switch", message, details: { ...request, reason, confidence } });
+    } finally {
+      switching.current = false;
+    }
+  }, [connectTranslation, publishOverlay, setConnection]);
+  performSwitchRef.current = performSwitch;
 
   useEffect(() => {
     if (!isTauri()) return;
     const unlisten = listen<TranslationSwitchRequest>("translation:switch-requested", async ({ payload }) => {
-      if (!useSessionStore.getState().active || switching.current || payload.sourceLanguage === payload.targetLanguage) return;
-      switching.current = true;
-      const appState = useAppStore.getState();
-      const nextSettings: AppSettings = {
-        ...appState.settings,
-        sourceLanguage: payload.sourceLanguage,
-        targetLanguage: payload.targetLanguage,
-        mode: "fixed-direction",
-      };
-      appState.updateSettings(nextSettings);
-      await appState.save();
-      const previous = lastOverlay.current;
-      await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, true);
-      try {
-        await connectTranslation(nextSettings);
-        await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
-      } catch (switchError) {
-        const message = switchError instanceof Error ? switchError.message : "Could not switch translation direction.";
-        setConnection("error", message);
-        await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
-        await recordDiagnostic({ at: new Date().toISOString(), scope: "translation-switch", message, details: { sourceLanguage: payload.sourceLanguage, targetLanguage: payload.targetLanguage } });
-      } finally {
-        switching.current = false;
-      }
+      await performSwitch(payload, "fixed-direction", "manual");
     });
     return () => { void unlisten.then((fn) => fn()); };
-  }, [connectTranslation, publishOverlay, setConnection]);
+  }, [performSwitch]);
 
   const selectMicrophone = async (microphoneDeviceId: string) => {
     const next = { ...settings, microphoneDeviceId: microphoneDeviceId || undefined };
@@ -119,7 +154,14 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     }
     setStarting(true);
     try {
-      await audio.current.start(settings.microphoneDeviceId, { onLevel: setAudioLevel, onChunk: (chunk) => client.current.sendAudio(chunk) });
+      audioHistory.current = new Uint8Array(0);
+      await audio.current.start(settings.microphoneDeviceId, { onLevel: setAudioLevel, onChunk: (chunk) => {
+        const combined = new Uint8Array(audioHistory.current.length + chunk.length);
+        combined.set(audioHistory.current);
+        combined.set(chunk, audioHistory.current.length);
+        audioHistory.current = combined.length > 160_000 ? combined.slice(combined.length - 160_000) : combined;
+        client.current.sendAudio(chunk);
+      } });
       startSession(settings);
       if (isTauri()) {
         const overlay = await Window.getByLabel("overlay");
@@ -162,6 +204,8 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
 
   const stop = async () => {
     await audio.current.stop();
+    detector.current.reset();
+    audioHistory.current = new Uint8Array(0);
     client.current.close();
     setAudioLevel(0);
     const finished = finishSession();
@@ -212,12 +256,12 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
         <button className="overlay-state" onClick={() => void toggleOverlay()}><span className="eye-box">{overlayVisible ? <Eye /> : <EyeOff />}</span><span><strong>Overlay {overlayVisible ? "visible" : "hidden"}</strong><small>Subtitles will appear above other windows</small></span></button>
         <button className="secondary-button" onClick={() => void testOverlay()}><ArrowUpRight size={18} />Test overlay</button>
       </div>
-      <div className="preview-block"><div className="section-label"><span>Live translation preview</span><span className="language-pair">{LANGUAGES[settings.sourceLanguage]} {settings.mode === "auto-bidirectional" ? "↔" : "→"} {LANGUAGES[settings.targetLanguage]}</span></div><div className="preview-text"><p>{segments.at(-1)?.sourceText ?? "Xin chào, cảm ơn bạn đã tham gia cuộc họp."}</p><strong>{latest}</strong></div><small><Radio size={13} />Subtitles update in real time</small></div>
+      <div className="preview-block"><div className="section-label"><span>Live translation preview</span><span className="language-pair">{LANGUAGES[settings.sourceLanguage]} {settings.mode === "smart-auto" ? "↔" : "→"} {LANGUAGES[settings.targetLanguage]}</span></div><div className="preview-text"><p>{segments.at(-1)?.sourceText ?? "Xin chào, cảm ơn bạn đã tham gia cuộc họp."}</p><strong>{latest}</strong></div><small><Radio size={13} />{settings.mode === "smart-auto" ? "Smart Auto detects language changes with Gemini 2.5 Flash-Lite" : "Subtitles update in real time"}</small></div>
     </section>
     <aside className="transcript-rail">
       <div className="rail-heading"><div><span>Recent transcript</span><strong>{segments.length} lines</strong></div><button onClick={() => navigate("transcript")}>View all <ArrowUpRight size={14} /></button></div>
-      <div className="rail-list">{segments.slice(-3).map((segment) => <article key={segment.id}><time>{new Date(segment.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><p>{segment.sourceText}</p><strong>{segment.translatedText}</strong></article>)}</div>
-      <button className="summary-button" disabled><Sparkles size={16} />Summary coming soon</button>
+      <div className="rail-list">{[...segments].reverse().map((segment) => <article key={segment.id}><time>{new Date(segment.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><p>{segment.sourceText}</p><strong>{segment.translatedText}</strong></article>)}</div>
+      <button className="summary-button" disabled={!segments.length} onClick={() => navigate("transcript")}><Sparkles size={16} />AI summary</button>
     </aside>
   </div>;
 }

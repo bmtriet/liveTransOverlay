@@ -55,6 +55,18 @@ pub fn save_session(app: AppHandle, session: Value) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn export_session(path: String, session: Value) -> Result<String, String> {
+  fs::write(&path, serde_json::to_vec_pretty(&session).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+  Ok(path)
+}
+
+#[tauri::command]
+pub fn export_text(path: String, content: String) -> Result<String, String> {
+  fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
+  Ok(path)
+}
+
+#[tauri::command]
 pub fn save_diagnostic(app: AppHandle, entry: Value) -> Result<String, String> {
   let logs = data_dir(&app)?.join("logs");
   fs::create_dir_all(&logs).map_err(|e| e.to_string())?;

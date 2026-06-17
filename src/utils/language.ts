@@ -19,3 +19,12 @@ export const LIVE_TRANSLATE_LANGUAGE_CODES: Record<LanguageCode, string> = {
 };
 
 export const languageOptions = Object.entries(LANGUAGES) as [LanguageCode, string][];
+
+export const COMPACT_LANGUAGES: Record<LanguageCode, string> = {
+  "vi-VN": "🇻🇳 VI",
+  "zh-CN": "🇨🇳 ZH",
+  "zh-TW": "🇹🇼 ZH",
+  "en-US": "🇺🇸 EN",
+  "ja-JP": "🇯🇵 JA",
+  "ko-KR": "🇰🇷 KO",
+};
