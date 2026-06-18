@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Captions, Gauge, Settings, SlidersHorizontal } from "lucide-react";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { Window } from "@tauri-apps/api/window";
 import { Brand } from "./components/Icons";
 import { ControlPanel } from "./routes/ControlPanel";
@@ -26,7 +26,12 @@ export default function App() {
       const next = !state.overlayVisible;
       state.setOverlayVisible(next);
       const overlay = await Window.getByLabel("overlay");
-      if (next) await overlay?.show(); else await overlay?.hide();
+      if (next) {
+        await overlay?.show();
+      } else {
+        await emitTo("overlay", "overlay:reset");
+        await overlay?.hide();
+      }
     });
     return () => { void unregister(shortcut); };
   }, []);

@@ -12,6 +12,7 @@ export class AudioCapture {
   private processor?: ScriptProcessorNode;
 
   async listDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
     const devices = await navigator.mediaDevices.enumerateDevices();
     return devices.filter((device) => device.kind === "audioinput");
   }
@@ -28,6 +29,9 @@ export class AudioCapture {
 
   async requestPermission(): Promise<"granted" | "denied"> {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Microphone capture is not available in this WebView.");
+      }
       if (!(await this.requestNativePermission())) return "denied";
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
@@ -41,7 +45,10 @@ export class AudioCapture {
 
   async start(deviceId: string | undefined, handlers: AudioCaptureHandlers) {
     if (!(await this.requestNativePermission())) {
-      throw new DOMException("Microphone access was denied by macOS.", "NotAllowedError");
+      throw new DOMException("Microphone access was denied by the operating system.", "NotAllowedError");
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Microphone capture is not available in this WebView.");
     }
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, channelCount: 1 },

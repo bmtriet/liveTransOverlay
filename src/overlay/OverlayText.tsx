@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { OverlaySettings } from "../types";
 
 interface OverlayTextProps {
   sourceText?: string;
   translatedText: string;
   settings: OverlaySettings;
+  controls?: ReactNode;
 }
 
-export function OverlayText({ sourceText, translatedText, settings }: OverlayTextProps) {
+export function OverlayText({ sourceText, translatedText, settings, controls }: OverlayTextProps) {
   const [winSize, setWinSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [scaledFontSize, setScaledFontSize] = useState(settings.fontSize);
   const probeRef = useRef<HTMLDivElement>(null);
@@ -22,7 +23,7 @@ export function OverlayText({ sourceText, translatedText, settings }: OverlayTex
   }, []);
 
   const totalLines = Math.min(5, Math.max(2, settings.maxLines));
-  const showSource = Boolean(settings.bilingualEnabled && sourceText);
+  const showSource = Boolean(settings.bilingualEnabled && sourceText && !sameCaption(sourceText, translatedText));
   const translationLines = showSource ? totalLines - 1 : totalLines;
 
   useLayoutEffect(() => {
@@ -67,20 +68,31 @@ export function OverlayText({ sourceText, translatedText, settings }: OverlayTex
   const translatedStyle: CSSProperties = {
     color: settings.textColor,
     fontSize: `${scaledFontSize}px`,
-    WebkitTextStroke: settings.strokeEnabled ? `${settings.strokeWidth}px ${settings.strokeColor}` : undefined,
-    textShadow: settings.shadowEnabled ? "0 4px 16px rgba(0,0,0,.75)" : undefined,
+    WebkitTextStroke: settings.strokeEnabled ? `${Math.min(1, settings.strokeWidth)}px ${settings.strokeColor}` : undefined,
+    textShadow: settings.shadowEnabled ? "0 2px 8px rgba(0,0,0,.72)" : undefined,
   };
   const sourceStyle: CSSProperties = {
     color: settings.textColor,
     fontSize: `${Math.max(12, Math.round(scaledFontSize * 0.48))}px`,
-    textShadow: settings.shadowEnabled ? "0 2px 10px rgba(0,0,0,.75)" : undefined,
+    textShadow: settings.shadowEnabled ? "0 1px 5px rgba(0,0,0,.65)" : undefined,
   };
 
-  return <div className={`overlay-text animation-${settings.animation}`} style={containerStyle}>
-    {showSource && sourceText ? <TailCaption className="overlay-source" style={sourceStyle} text={sourceText} maxLines={1} lineHeight={1.32} /> : null}
-    <TailCaption className="overlay-translation" style={translatedStyle} text={translatedText} maxLines={translationLines} lineHeight={1.22} />
+  return <div data-tauri-drag-region className="overlay-text" style={containerStyle}>
+    {controls ? <div className="overlay-controls-slot">{controls}</div> : null}
+    <div data-tauri-drag-region key={`${sourceText}:${translatedText}`} className={`animation-${settings.animation}`} style={{ width: "100%" }}>
+      {showSource && sourceText ? <TailCaption key={`source:${sourceText}`} className="overlay-source" style={sourceStyle} text={sourceText} maxLines={1} lineHeight={1.32} /> : null}
+      <TailCaption key={`translation:${translatedText}`} className="overlay-translation" style={translatedStyle} text={translatedText} maxLines={translationLines} lineHeight={1.22} />
+    </div>
     <div ref={probeRef} style={{ position: "absolute", visibility: "hidden", pointerEvents: "none", left: 0, top: 0, padding: "13px 22px 16px", boxSizing: "border-box" }} />
   </div>;
+}
+
+function sameCaption(sourceText: string, translatedText: string) {
+  return normalizeCaption(sourceText) === normalizeCaption(translatedText);
+}
+
+function normalizeCaption(text: string) {
+  return text.trim().toLocaleLowerCase().replace(/\s+/g, " ").replace(/[.,!?;:，。！？；：]+$/g, "");
 }
 
 function TailCaption({ className, style, text, maxLines, lineHeight }: { className: string; style: CSSProperties; text: string; maxLines: number; lineHeight: number }) {

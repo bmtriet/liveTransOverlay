@@ -73,7 +73,29 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       onStatus: setConnection,
       onText: (text, isFinal, result) => {
         useSessionStore.getState().addText(text, isFinal, runtimeSettings, result.sourceText, result.sourceLanguage, result.targetLanguage);
+        if (isFinal) {
+          const currentSession = useSessionStore.getState().session;
+          if (currentSession) {
+            void saveTranscript(currentSession).catch((error) => {
+              void recordDiagnostic({
+                at: new Date().toISOString(),
+                scope: "transcript-autosave",
+                message: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }
+        }
         void publishOverlay(text, isFinal, result.sourceText, runtimeSettings);
+        if (result.sourceText) {
+          detector.current.observe({ text: result.sourceText, settings: runtimeSettings }, (decision: LanguageDecision) => {
+            void performSwitchRef.current?.(
+              { sourceLanguage: runtimeSettings.targetLanguage, targetLanguage: runtimeSettings.sourceLanguage },
+              "smart-auto",
+              "smart-language-detection",
+              decision.confidence,
+            );
+          });
+        }
       },
       onInputTranscript: (text, _isFinal, languageCode) => {
         detector.current.observe({ text, apiLanguageCode: languageCode, settings: runtimeSettings }, (decision: LanguageDecision) => {
@@ -139,6 +161,31 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     return () => { void unlisten.then((fn) => fn()); };
   }, [performSwitch]);
 
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen<number>("overlay:font-size-changed", async ({ payload: fontSize }) => {
+      const appState = useAppStore.getState();
+      const nextSettings = {
+        ...appState.settings,
+        overlay: {
+          ...appState.settings.overlay,
+          fontSize: Math.min(72, Math.max(24, fontSize)),
+        },
+      };
+      appState.updateSettings(nextSettings);
+      await appState.save();
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen("overlay:closed", () => {
+      setOverlayVisible(false);
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, [setOverlayVisible]);
+
   const selectMicrophone = async (microphoneDeviceId: string) => {
     const next = { ...settings, microphoneDeviceId: microphoneDeviceId || undefined };
     updateSettings(next);
@@ -181,7 +228,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       setAudioLevel(0);
       finishSession();
       const message = startError instanceof DOMException && startError.name === "NotAllowedError"
-        ? "Microphone access is blocked. Open Settings → Open Privacy Settings, enable access, then try again."
+        ? "Microphone access is blocked. Open Settings, check microphone access, then try again."
         : startError instanceof Error ? startError.message
           : typeof startError === "string" ? startError
             : "Meeting could not start.";
@@ -212,6 +259,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     if (finished) await saveTranscript(finished);
     if (isTauri()) {
       await invoke("set_overlay_click_through", { enabled: settings.overlay.clickThrough });
+      await emitTo("overlay", "overlay:reset");
       await (await Window.getByLabel("overlay"))?.hide();
       setOverlayVisible(false);
       await getCurrentWindow().show();
@@ -224,7 +272,12 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     setOverlayVisible(next);
     if (isTauri()) {
       const overlay = await Window.getByLabel("overlay");
-      if (next) await overlay?.show(); else await overlay?.hide();
+      if (next) {
+        await overlay?.show();
+      } else {
+        await emitTo("overlay", "overlay:reset");
+        await overlay?.hide();
+      }
     }
   };
 

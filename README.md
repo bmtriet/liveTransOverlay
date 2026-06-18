@@ -4,14 +4,62 @@ Realtime microphone translation with a transparent, always-on-top subtitle overl
 
 ## Run
 
+### Development
+
+To start the development environment (which automatically checks and kills any process occupying port 1420):
+
 ```bash
 npm install
-npm run tauri dev
+./run-dev.sh
 ```
+
+*(Or use the standard command `npm run tauri dev`).*
+
+For browser-only UI development, use `npm run dev`. Native overlay and local session files require Tauri.
+
+## Build & Install
+
+### macOS
 
 For a macOS debug app with the microphone entitlement embedded in its ad-hoc signature, run `npm run build:macos:debug`. Launch the resulting `.app` bundle rather than the raw binary.
 
-For browser-only UI development, use `npm run dev`. Native overlay and local session files require Tauri.
+### Linux (Ubuntu)
+
+#### Prerequisites
+
+To develop and build Tauri v2 applications on Ubuntu, you must install the following system dependencies:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libwebkit2gtk-4.1-dev \
+  libgtk-3-dev \
+  libappindicator3-dev \
+  librsvg2-dev \
+  patchelf \
+  libssl-dev
+```
+
+#### Build, Install & Run
+
+1. Build the release `.deb` package:
+   ```bash
+   npx tauri build --bundles deb
+   ```
+
+2. Install the generated package:
+   ```bash
+   sudo apt install "./src-tauri/target/release/bundle/deb/LiveTranslate Overlay_*.deb"
+   ```
+
+3. Run the installed application:
+   ```bash
+   ./run.sh
+   ```
 
 ## MVP flow
 

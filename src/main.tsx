@@ -3,5 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { OverlayWindow } from "./overlay/OverlayWindow";
 
-const isOverlay = new URLSearchParams(window.location.search).has("overlay");
-createRoot(document.getElementById("root")!).render(<StrictMode>{isOverlay ? <OverlayWindow /> : <App />}</StrictMode>);
+const params = new URLSearchParams(window.location.search);
+const isOverlay = params.has("overlay");
+const root = isOverlay ? <OverlayWindow /> : <App />;
+createRoot(document.getElementById("root")!).render(<StrictMode>{root}</StrictMode>);

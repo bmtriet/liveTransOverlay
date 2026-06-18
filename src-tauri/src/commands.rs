@@ -3,6 +3,11 @@ use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
+pub fn host_platform() -> &'static str {
+  std::env::consts::OS
+}
+
+#[tauri::command]
 pub fn open_microphone_privacy_settings() -> Result<(), String> {
   #[cfg(target_os = "macos")]
   let mut command = std::process::Command::new("open");
@@ -16,10 +21,14 @@ pub fn open_microphone_privacy_settings() -> Result<(), String> {
     value
   };
 
-  #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-  return Err("Open your system privacy settings and allow microphone access for LiveTranslate Overlay.".into());
+  #[cfg(target_os = "linux")]
+  let mut command = {
+    let mut value = std::process::Command::new("sh");
+    value.args(["-c", "gnome-control-center sound || xdg-open settings://sound"]);
+    value
+  };
 
-  #[cfg(any(target_os = "macos", target_os = "windows"))]
+  #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
   command.spawn().map(|_| ()).map_err(|error| error.to_string())
 }
 

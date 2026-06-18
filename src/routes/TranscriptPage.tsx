@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { Captions, CheckCircle2, Clock3, Download, Sparkles } from "lucide-react";
 import type { Route } from "../App";
 import { summarizeMeeting } from "../services/geminiTextClient";
+import { saveTranscript } from "../services/transcriptStore";
 import { sanitizedSession, sessionToMarkdown } from "../services/transcriptExport";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
@@ -35,13 +36,15 @@ export function TranscriptPage({ navigate }: { navigate: (route: Route) => void 
     setOperationError("");
     try {
       const text = await summarizeMeeting(settings, session, summaryLanguage, summaryStyle);
-      setSummary({
+      const summary = {
         text,
         language: summaryLanguage,
         style: summaryStyle,
         generatedAt: new Date().toISOString(),
         model: settings.languageDetectorModel,
-      });
+      };
+      setSummary(summary);
+      await saveTranscript({ ...session, summary });
     } catch (error) {
       setOperationError(error instanceof Error ? error.message : "The AI summary could not be generated.");
     } finally {

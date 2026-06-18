@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ArrowUpRight,
   Check,
   CircleAlert,
   ExternalLink,
@@ -30,21 +31,37 @@ export function SettingsPage({
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [hostPlatform, setHostPlatform] = useState("web");
   const [micPermission, setMicPermission] = useState<
     "unknown" | "requesting" | "granted" | "denied" | "error"
   >("unknown");
   const [micError, setMicError] = useState("");
   const [audioCapture] = useState(() => new AudioCapture());
   useEffect(() => {
-    void Promise.all([
-      audioCapture.listDevices(),
-      audioCapture.permissionStatus(),
-    ])
-      .then(([availableDevices, permission]) => {
-        setDevices(availableDevices);
-        setMicPermission(permission);
-      })
-      .catch(() => setDevices([]));
+    let cancelled = false;
+    void (async () => {
+      const detectedPlatform = "__TAURI_INTERNALS__" in window
+        ? await invoke<string>("host_platform").catch(() => "unknown")
+        : "web";
+      if (!cancelled) setHostPlatform(detectedPlatform);
+
+      try {
+        const permission = await audioCapture.permissionStatus();
+        if (!cancelled) setMicPermission(permission);
+      } catch {
+        if (!cancelled) setMicPermission("unknown");
+      }
+
+      try {
+        const availableDevices = await audioCapture.listDevices();
+        if (!cancelled) setDevices(availableDevices);
+      } catch {
+        if (!cancelled) setDevices([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [audioCapture]);
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -88,6 +105,53 @@ export function SettingsPage({
       setMicError(error instanceof Error ? error.message : String(error));
     }
   };
+  const testOverlay = async () => {
+    if (!("__TAURI_INTERNALS__" in window)) {
+      console.log("Mock overlay test in browser:", draft.overlay);
+      return;
+    }
+    try {
+      const { emitTo } = await import("@tauri-apps/api/event");
+      const { Window } = await import("@tauri-apps/api/window");
+
+      const overlay = await Window.getByLabel("overlay");
+      await overlay?.show();
+      await invoke("set_overlay_click_through", { enabled: false });
+
+      const payload = {
+        sourceText: "Xin chào, cảm ơn bạn đã tham gia cuộc họp.",
+        translatedText: "Hello, thank you for joining the meeting.",
+        final: true,
+        settings: draft.overlay,
+        sourceLanguage: draft.sourceLanguage,
+        targetLanguage: draft.targetLanguage,
+        mode: draft.mode,
+        switching: false,
+      };
+      await emitTo("overlay", "overlay:update", payload);
+    } catch (error) {
+      console.error("Failed to test overlay:", error);
+    }
+  };
+
+  const permissionHelp =
+    hostPlatform === "macos"
+      ? "macOS will show its system permission dialog after you click."
+      : hostPlatform === "linux"
+        ? "Ubuntu/Linux uses the desktop microphone through WebKitGTK after you click."
+        : hostPlatform === "windows"
+          ? "Windows will use the system microphone permission after you click."
+          : "Your browser or desktop shell will ask for microphone access after you click.";
+  const settingsButtonLabel =
+    hostPlatform === "linux" ? "Open Sound Settings" : "Open Privacy Settings";
+  const deniedMessage =
+    hostPlatform === "macos"
+      ? "Access was denied. Open System Settings → Privacy & Security → Microphone, then enable LiveTranslate Overlay. If it is not listed, quit the app, reset its permission, reopen it, and click this button again."
+      : hostPlatform === "linux"
+        ? "Access was denied. Check Ubuntu Sound input settings, make sure a microphone is selected, then click Try again. If you installed from a sandboxed package later, also check that package's microphone permission."
+        : hostPlatform === "windows"
+          ? "Access was denied. Open Windows Settings → Privacy & security → Microphone, then allow microphone access for desktop apps and try again."
+          : "Access was denied. Allow microphone access in your browser or desktop permission prompt, then try again.";
 
   return (
     <div className="settings-page">
@@ -208,9 +272,7 @@ export function SettingsPage({
             <div className="full microphone-permission">
               <div>
                 <span className="field-label">Microphone permission</span>
-                <p>
-                  macOS will show its system permission dialog after you click.
-                </p>
+                <p>{permissionHelp}</p>
               </div>
               <div className="permission-actions">
                 <button
@@ -241,19 +303,14 @@ export function SettingsPage({
                   onClick={() => void openPrivacySettings()}
                 >
                   <ExternalLink size={17} />
-                  Open Privacy Settings
+                  {settingsButtonLabel}
                 </button>
               </div>
             </div>
             {micPermission === "denied" ? (
               <div className="permission-message denied full">
                 <CircleAlert size={16} />
-                <span>
-                  Access was denied. Open System Settings → Privacy & Security →
-                  Microphone, then enable LiveTranslate Overlay. If it is not
-                  listed, quit the app, reset its permission, reopen it, and
-                  click this button again.
-                </span>
+                <span>{deniedMessage}</span>
               </div>
             ) : null}
             {micError ? (
@@ -291,6 +348,15 @@ export function SettingsPage({
               <h2>Overlay appearance</h2>
               <p>Make subtitles readable over any content.</p>
             </div>
+            <button
+              type="button"
+              className="secondary-button compact"
+              style={{ marginLeft: "auto", minHeight: "38px" }}
+              onClick={() => void testOverlay()}
+            >
+              <ArrowUpRight size={17} />
+              Test overlay
+            </button>
           </div>
           <div className="form-grid">
             <label>
