@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:macos:debug": "bash scripts/build-macos-debug.sh",
+    "build:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
+    "dev:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-dev-windows.ps1",
+    "run:windows": "scripts\\run-windows.cmd",
     "preview": "vite preview",
     "tauri": "tauri"
   },

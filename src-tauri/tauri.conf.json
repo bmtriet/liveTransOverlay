@@ -21,6 +21,11 @@
     "active": true,
     "targets": "all",
     "icon": [],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
     "macOS": {
       "entitlements": "./Entitlements.plist"
     }
