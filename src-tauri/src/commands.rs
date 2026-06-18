@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::{fs, io::Write, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
@@ -25,6 +25,35 @@ pub fn open_microphone_privacy_settings() -> Result<(), String> {
   let mut command = {
     let mut value = std::process::Command::new("sh");
     value.args(["-c", "gnome-control-center sound || xdg-open settings://sound"]);
+    value
+  };
+
+  #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+  command.spawn().map(|_| ()).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn open_author_profile() -> Result<(), String> {
+  const PROFILE_URL: &str = "https://github.com/bmtriet";
+
+  #[cfg(target_os = "macos")]
+  let mut command = {
+    let mut value = std::process::Command::new("open");
+    value.arg(PROFILE_URL);
+    value
+  };
+
+  #[cfg(target_os = "windows")]
+  let mut command = {
+    let mut value = std::process::Command::new("explorer.exe");
+    value.arg(PROFILE_URL);
+    value
+  };
+
+  #[cfg(target_os = "linux")]
+  let mut command = {
+    let mut value = std::process::Command::new("xdg-open");
+    value.arg(PROFILE_URL);
     value
   };
 
@@ -81,5 +110,15 @@ pub fn save_diagnostic(app: AppHandle, entry: Value) -> Result<String, String> {
   fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
   let path = logs.join("latest-error.json");
   fs::write(&path, serde_json::to_vec_pretty(&entry).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+  Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn append_debug_log(app: AppHandle, entry: Value) -> Result<String, String> {
+  let logs = data_dir(&app)?.join("logs");
+  fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
+  let path = logs.join("smart-auto-debug.jsonl");
+  let mut file = fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| e.to_string())?;
+  writeln!(file, "{}", serde_json::to_string(&entry).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
   Ok(path.to_string_lossy().into_owned())
 }

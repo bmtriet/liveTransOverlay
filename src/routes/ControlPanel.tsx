@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
-import { ArrowUpRight, CircleStop, Eye, EyeOff, Mic, Play, Radio, Sparkles } from "lucide-react";
+import { ArrowRightLeft, ArrowUpRight, CircleAlert, CircleStop, Eye, EyeOff, Mic, Play, Radio, Sparkles } from "lucide-react";
 import type { Route } from "../App";
 import { AudioCapture } from "../services/audioCapture";
 import { GeminiLiveClient } from "../services/geminiLiveClient";
@@ -13,8 +13,8 @@ import { SmartLanguageDetector } from "../services/smartLanguageDetector";
 import type { LanguageDecision } from "../services/geminiTextClient";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
-import { LANGUAGES } from "../utils/language";
-import type { AppSettings, OverlayUpdatePayload, TranslationSwitchRequest } from "../types";
+import { LANGUAGES, languageOptions } from "../utils/language";
+import type { AppSettings, LanguageCode, OverlayUpdatePayload, TranslationSwitchRequest } from "../types";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -41,6 +41,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   const detector = useRef(new SmartLanguageDetector());
   const audioHistory = useRef(new Uint8Array(0));
   const switching = useRef(false);
+  const translationGeneration = useRef(0);
   const performSwitchRef = useRef<((request: TranslationSwitchRequest, mode: AppSettings["mode"], reason: "manual" | "smart-language-detection", confidence?: number) => Promise<void>) | null>(null);
   const lastOverlay = useRef({ translatedText: "Listening…", final: false, sourceText: undefined as string | undefined });
   const [starting, setStarting] = useState(false);
@@ -48,7 +49,9 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
 
   useEffect(() => { void audio.current.listDevices().then(setDevices).catch(() => setDevices([])); }, []);
   const segments = session?.segments ?? [];
-  const latest = partialText || segments.at(-1)?.translatedText || "Your translated subtitles will appear here.";
+  const latest = active
+    ? partialText || segments.at(-1)?.translatedText || "Listening…"
+    : "Your translated subtitles will appear here.";
   const bars = useMemo(() => Array.from({ length: 22 }, (_, i) => Math.min(1, audioLevel * 1.5 + (Math.sin(i * 1.7) + 1) * 0.08)), [audioLevel]);
 
   const publishOverlay = useCallback(async (translatedText: string, final = false, sourceText?: string, runtimeSettings?: AppSettings, isSwitching = false) => {
@@ -69,9 +72,13 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   }, []);
 
   const connectTranslation = useCallback(async (runtimeSettings: AppSettings, replayAudio?: Uint8Array) => {
+    const generation = ++translationGeneration.current;
     await client.current.connect(runtimeSettings, {
-      onStatus: setConnection,
+      onStatus: (nextStatus, nextError) => {
+        if (generation === translationGeneration.current) setConnection(nextStatus, nextError);
+      },
       onText: (text, isFinal, result) => {
+        if (generation !== translationGeneration.current) return;
         useSessionStore.getState().addText(text, isFinal, runtimeSettings, result.sourceText, result.sourceLanguage, result.targetLanguage);
         if (isFinal) {
           const currentSession = useSessionStore.getState().session;
@@ -98,6 +105,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
         }
       },
       onInputTranscript: (text, _isFinal, languageCode) => {
+        if (generation !== translationGeneration.current) return;
         detector.current.observe({ text, apiLanguageCode: languageCode, settings: runtimeSettings }, (decision: LanguageDecision) => {
           void performSwitchRef.current?.(
             { sourceLanguage: runtimeSettings.targetLanguage, targetLanguage: runtimeSettings.sourceLanguage },
@@ -140,7 +148,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     try {
       const replayAudio = audioHistory.current.slice(Math.max(0, audioHistory.current.length - 96_000));
       await connectTranslation(nextSettings, replayAudio);
-      detector.current.markSwitched();
+      detector.current.markSwitched(nextSettings);
       await publishOverlay(previous.translatedText, previous.final, previous.sourceText, nextSettings, false);
     } catch (switchError) {
       const message = switchError instanceof Error ? switchError.message : "Could not switch translation direction.";
@@ -192,6 +200,31 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     await saveSettings();
   };
 
+  const updateTranslationSetup = async (changes: Partial<Pick<AppSettings, "sourceLanguage" | "targetLanguage" | "mode">>) => {
+    if (active || starting) return;
+    const appState = useAppStore.getState();
+    const next = { ...appState.settings, ...changes };
+    appState.updateSettings(next);
+    await appState.save();
+    detector.current.reset();
+  };
+
+  const selectSourceLanguage = async (sourceLanguage: LanguageCode) => {
+    const current = useAppStore.getState().settings;
+    await updateTranslationSetup({
+      sourceLanguage,
+      targetLanguage: sourceLanguage === current.targetLanguage ? current.sourceLanguage : current.targetLanguage,
+    });
+  };
+
+  const selectTargetLanguage = async (targetLanguage: LanguageCode) => {
+    const current = useAppStore.getState().settings;
+    await updateTranslationSetup({
+      sourceLanguage: targetLanguage === current.sourceLanguage ? current.targetLanguage : current.sourceLanguage,
+      targetLanguage,
+    });
+  };
+
   const start = async () => {
     if (starting) return;
     setConnection("idle");
@@ -207,6 +240,15 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
         combined.set(audioHistory.current);
         combined.set(chunk, audioHistory.current.length);
         audioHistory.current = combined.length > 160_000 ? combined.slice(combined.length - 160_000) : combined;
+        const detectorSettings = useAppStore.getState().settings;
+        detector.current.observeAudio(audioHistory.current, detectorSettings, (decision) => {
+          void performSwitchRef.current?.(
+            { sourceLanguage: detectorSettings.targetLanguage, targetLanguage: detectorSettings.sourceLanguage },
+            "smart-auto",
+            "smart-language-detection",
+            decision.confidence,
+          );
+        });
         client.current.sendAudio(chunk);
       } });
       startSession(settings);
@@ -223,6 +265,8 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       }
       await connectTranslation(settings);
     } catch (startError) {
+      const cancelled = startError instanceof Error && startError.message === "Translation connection cancelled.";
+      if (cancelled && !useSessionStore.getState().active) return;
       await audio.current.stop();
       client.current.close();
       setAudioLevel(0);
@@ -250,12 +294,14 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   };
 
   const stop = async () => {
+    translationGeneration.current += 1;
     await audio.current.stop();
     detector.current.reset();
     audioHistory.current = new Uint8Array(0);
     client.current.close();
     setAudioLevel(0);
     const finished = finishSession();
+    lastOverlay.current = { translatedText: "Listening…", final: false, sourceText: undefined };
     if (finished) await saveTranscript(finished);
     if (isTauri()) {
       await invoke("set_overlay_click_through", { enabled: settings.overlay.clickThrough });
@@ -294,6 +340,25 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   return <div className="control-layout">
     <section className="workspace">
       <header className="page-header"><div><h1>Ready to translate</h1><p>Clear subtitles, while the conversation is happening.</p></div><div className={`status-chip ${status}`}><span />{status === "idle" ? "Ready" : status}</div></header>
+      <section className="translation-setup" aria-label="Translation setup">
+        <div className="translation-setup-heading">
+          <div><span>Translation setup</span><small>Choose this before starting the meeting</small></div>
+          <strong>{settings.mode === "smart-auto" ? "Two-way" : "One-way"}</strong>
+        </div>
+        <div className="translation-language-row">
+          <label><span>From</span><select value={settings.sourceLanguage} disabled={active || starting} onChange={(event) => void selectSourceLanguage(event.target.value as LanguageCode)}>{languageOptions.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label>
+          <button className="swap-languages" disabled={active || starting} onClick={() => void updateTranslationSetup({ sourceLanguage: settings.targetLanguage, targetLanguage: settings.sourceLanguage })} title="Swap languages" aria-label="Swap source and target languages"><ArrowRightLeft size={18} /></button>
+          <label><span>To</span><select value={settings.targetLanguage} disabled={active || starting} onChange={(event) => void selectTargetLanguage(event.target.value as LanguageCode)}>{languageOptions.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label>
+        </div>
+        <div className="translation-method-row">
+          <span>Translation method</span>
+          <div className="segmented translation-method">
+            <button disabled={active || starting} className={settings.mode === "smart-auto" ? "selected" : ""} onClick={() => void updateTranslationSetup({ mode: "smart-auto" })}>Smart auto</button>
+            <button disabled={active || starting} className={settings.mode === "fixed-direction" ? "selected" : ""} onClick={() => void updateTranslationSetup({ mode: "fixed-direction" })}>Fixed direction</button>
+          </div>
+        </div>
+        {settings.mode === "smart-auto" ? <div className="translation-auto-note"><CircleAlert size={15} /><span>Automatically switches direction when the speaker changes language.</span></div> : null}
+      </section>
       <div className="listening-hero">
         <div className={active ? "mic-orbit active" : "mic-orbit"}><div className="wave left" /> <Mic size={35} /> <div className="wave right" /></div>
         <h2>{active ? "Listening now" : "Your meeting, understood"}</h2>
@@ -309,7 +374,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
         <button className="overlay-state" onClick={() => void toggleOverlay()}><span className="eye-box">{overlayVisible ? <Eye /> : <EyeOff />}</span><span><strong>Overlay {overlayVisible ? "visible" : "hidden"}</strong><small>Subtitles will appear above other windows</small></span></button>
         <button className="secondary-button" onClick={() => void testOverlay()}><ArrowUpRight size={18} />Test overlay</button>
       </div>
-      <div className="preview-block"><div className="section-label"><span>Live translation preview</span><span className="language-pair">{LANGUAGES[settings.sourceLanguage]} {settings.mode === "smart-auto" ? "↔" : "→"} {LANGUAGES[settings.targetLanguage]}</span></div><div className="preview-text"><p>{segments.at(-1)?.sourceText ?? "Xin chào, cảm ơn bạn đã tham gia cuộc họp."}</p><strong>{latest}</strong></div><small><Radio size={13} />{settings.mode === "smart-auto" ? "Smart Auto detects language changes with Gemini 2.5 Flash-Lite" : "Subtitles update in real time"}</small></div>
+      <div className="preview-block"><div className="section-label"><span>Live translation preview</span><span className="language-pair">{LANGUAGES[settings.sourceLanguage]} {settings.mode === "smart-auto" ? "↔" : "→"} {LANGUAGES[settings.targetLanguage]}</span></div><div className="preview-text"><p>{active ? segments.at(-1)?.sourceText ?? "Listening…" : "Start a meeting to see the live transcript."}</p><strong>{latest}</strong></div><small><Radio size={13} />{settings.mode === "smart-auto" ? "Smart Auto detects language changes with Gemini Flash-Lite" : "Subtitles update in real time"}</small></div>
     </section>
     <aside className="transcript-rail">
       <div className="rail-heading"><div><span>Recent transcript</span><strong>{segments.length} lines</strong></div><button onClick={() => navigate("transcript")}>View all <ArrowUpRight size={14} /></button></div>

@@ -5,7 +5,7 @@ import { loadPersistedSettings, persistSettings } from "../services/settingsStor
 export const defaultSettings: AppSettings = {
   geminiApiKey: "",
   model: "gemini-3.5-live-translate-preview",
-  languageDetectorModel: "gemini-2.5-flash-lite",
+  languageDetectorModel: "gemini-flash-lite-latest",
   sourceLanguage: "vi-VN",
   targetLanguage: "zh-CN",
   mode: "fixed-direction",
@@ -47,6 +47,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...defaultSettings,
           ...persisted,
           model: persisted.model === "gemini-3.1-flash-live-preview" ? defaultSettings.model : persisted.model,
+          languageDetectorModel: !persisted.languageDetectorModel
+            || persisted.languageDetectorModel === "gemini-2.5-flash-lite"
+            ? defaultSettings.languageDetectorModel
+            : persisted.languageDetectorModel,
           mode: (persisted.mode as string) === "auto-bidirectional" ? "smart-auto" : persisted.mode,
           overlay: {
             ...defaultSettings.overlay,

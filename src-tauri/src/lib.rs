@@ -34,13 +34,20 @@ pub fn run() {
             commands::export_session,
             commands::export_text,
             commands::save_diagnostic,
+            commands::append_debug_log,
             commands::host_platform,
             commands::open_microphone_privacy_settings,
+            commands::open_author_profile,
             macos_permissions::microphone_permission_status,
             macos_permissions::request_native_microphone_permission,
             overlay_window::set_overlay_click_through
         ])
         .setup(|_app| {
+            #[cfg(debug_assertions)]
+            if let Some(main) = _app.get_webview_window("main") {
+                main.open_devtools();
+            }
+
             #[cfg(target_os = "linux")]
             if let Some(main) = _app.get_webview_window("main") {
                 main.with_webview(|webview| {

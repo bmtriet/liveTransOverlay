@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Captions, Gauge, Settings, SlidersHorizontal } from "lucide-react";
+import { Captions, Gauge, Github, Settings, SlidersHorizontal } from "lucide-react";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { Window } from "@tauri-apps/api/window";
 import { Brand } from "./components/Icons";
@@ -56,7 +57,17 @@ export default function App() {
     <aside className="sidebar">
       <Brand />
       <nav>{nav.map(([id, label, Icon]) => <button key={id} className={route === id ? "nav-item active" : "nav-item"} onClick={() => setRoute(id)}><Icon size={19} /><span>{label}</span></button>)}</nav>
-      <div className="sidebar-note"><SlidersHorizontal size={17} /><div><strong>Overlay shortcut</strong><span>⌘ + Shift + O</span></div></div>
+      <div className="sidebar-footer">
+        <div className="sidebar-note"><SlidersHorizontal size={17} /><div><strong>Overlay shortcut</strong><span>⌘ + Shift + O</span></div></div>
+        <a className="author-credit" href="https://github.com/bmtriet" target="_blank" rel="noreferrer" title="Open Steven's GitHub profile" onClick={(event) => {
+          if (!("__TAURI_INTERNALS__" in window)) return;
+          event.preventDefault();
+          void invoke("open_author_profile");
+        }}>
+          <Github size={17} />
+          <span><small>Created by</small><strong>Steven - VG @ 2026</strong></span>
+        </a>
+      </div>
     </aside>
     <main className="main-surface">
       {route === "control" ? <ControlPanel navigate={setRoute} /> : null}

@@ -38,6 +38,7 @@ interface LiveConnection {
   translatedText: string;
   finalizeTimer?: number;
   intentionalClose: boolean;
+  cancelPending?: () => void;
 }
 
 export class GeminiLiveClient {
@@ -116,9 +117,23 @@ export class GeminiLiveClient {
         fail(`Gemini did not start ${direction.sourceLanguage} → ${direction.targetLanguage} within 12 seconds.`);
         socket.close();
       }, 12000);
+      connection.cancelPending = () => {
+        window.clearTimeout(timeout);
+        if (!settled) {
+          settled = true;
+          reject(new Error("Translation connection cancelled."));
+        }
+      };
 
-      socket.onopen = () => socket.send(JSON.stringify(setupMessage));
+      socket.onopen = () => {
+        if (connection.intentionalClose) {
+          socket.close(1000, "Meeting ended before setup");
+          return;
+        }
+        socket.send(JSON.stringify(setupMessage));
+      };
       socket.onmessage = async (event) => {
+        if (connection.intentionalClose) return;
         let message: GeminiMessage;
         try {
           const raw = typeof event.data === "string"
@@ -146,7 +161,7 @@ export class GeminiLiveClient {
           if (!settled) { settled = true; resolve(); }
           return;
         }
-        this.handleContent(connection, message, handlers);
+        if (!connection.intentionalClose) this.handleContent(connection, message, handlers);
       };
       socket.onerror = () => fail("Could not connect to Gemini Live API. Check your internet connection and API key.");
       socket.onclose = (event) => {
@@ -236,13 +251,22 @@ export class GeminiLiveClient {
     this.closing = true;
     for (const connection of this.connections) {
       connection.intentionalClose = true;
+      connection.cancelPending?.();
       window.clearTimeout(connection.finalizeTimer);
-      if (connection.socket.readyState === WebSocket.OPEN && connection.ready) {
-        if (this.audioBuffer.length) this.sendAudioMessage(connection, this.audioBuffer);
-        connection.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
-        connection.socket.close(1000, "Meeting ended");
-      } else if (connection.socket.readyState === WebSocket.OPEN) {
-        connection.socket.close(1000, "Meeting ended before setup");
+      connection.sourceText = "";
+      connection.translatedText = "";
+      try {
+        if (connection.socket.readyState === WebSocket.OPEN) {
+          if (connection.ready) {
+            if (this.audioBuffer.length) this.sendAudioMessage(connection, this.audioBuffer);
+            connection.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+          }
+          connection.socket.close(1000, "Meeting ended");
+        } else if (connection.socket.readyState === WebSocket.CONNECTING) {
+          connection.socket.close();
+        }
+      } catch {
+        // The socket can transition state between the readyState check and close.
       }
     }
     this.connections = [];

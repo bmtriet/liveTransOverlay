@@ -14,8 +14,7 @@ import {
 import type { Route } from "../App";
 import { AudioCapture } from "../services/audioCapture";
 import { useAppStore } from "../store/appStore";
-import type { AppSettings, LanguageCode } from "../types";
-import { languageOptions } from "../utils/language";
+import type { AppSettings } from "../types";
 
 export function SettingsPage({
   navigate,
@@ -209,66 +208,11 @@ export function SettingsPage({
           <div className="settings-title">
             <span>02</span>
             <div>
-              <h2>Translation</h2>
-              <p>Choose the languages for this conversation.</p>
+              <h2>Microphone access</h2>
+              <p>Allow the desktop app to hear the conversation.</p>
             </div>
           </div>
           <div className="form-grid">
-            <label>
-              <span>From</span>
-              <select
-                value={draft.sourceLanguage}
-                onChange={(e) =>
-                  set("sourceLanguage", e.target.value as LanguageCode)
-                }
-              >
-                {languageOptions.map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>To</span>
-              <select
-                value={draft.targetLanguage}
-                onChange={(e) =>
-                  set("targetLanguage", e.target.value as LanguageCode)
-                }
-              >
-                {languageOptions.map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="full">
-              <span>Direction</span>
-              <div className="segmented">
-                <button
-                  className={
-                    draft.mode === "smart-auto" ? "selected" : ""
-                  }
-                  onClick={() => set("mode", "smart-auto")}
-                >
-                  Smart auto
-                </button>
-                <button
-                  className={draft.mode === "fixed-direction" ? "selected" : ""}
-                  onClick={() => set("mode", "fixed-direction")}
-                >
-                  Fixed direction
-                </button>
-              </div>
-            </label>
-            {draft.mode === "smart-auto" ? (
-              <div className="cost-warning full">
-                <CircleAlert size={17} />
-                <span><strong>Experimental language switching</strong> Smart Auto runs one Live session and uses Gemini 2.5 Flash-Lite to detect when the speaker changes language. A short reconnect delay is expected.</span>
-              </div>
-            ) : null}
             <div className="full microphone-permission">
               <div>
                 <span className="field-label">Microphone permission</span>

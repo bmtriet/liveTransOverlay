@@ -13,3 +13,12 @@ export async function recordDiagnostic(entry: DiagnosticEntry): Promise<void> {
     try { await invoke("save_diagnostic", { entry }); } catch { /* localStorage fallback */ }
   }
 }
+
+export async function recordSmartAutoDebug(event: string, details: unknown): Promise<void> {
+  if (!("__TAURI_INTERNALS__" in window)) return;
+  try {
+    await invoke("append_debug_log", { entry: { at: new Date().toISOString(), event, details } });
+  } catch {
+    // Debug logging must never interrupt translation.
+  }
+}
