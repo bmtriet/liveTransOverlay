@@ -44,6 +44,7 @@ export function OverlayWindow() {
     const overlayWindow = getCurrentWindow();
     const updateUnlisten = listen<OverlayUpdatePayload>("overlay:update", ({ payload: next }) => {
       setPayload(next);
+      void applyPresentationMode(Boolean(next.presentationMode));
       window.clearTimeout(timer.current);
       if (next.final) {
         timer.current = window.setTimeout(() => {
@@ -66,11 +67,43 @@ export function OverlayWindow() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!payload.presentationMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") void openMainAndHideOverlay();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [payload.presentationMode]);
+
+  const applyPresentationMode = async (enabled: boolean) => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const overlayWindow = getCurrentWindow();
+    const current = await overlayWindow.isFullscreen().catch(() => false);
+    if (current !== enabled) await overlayWindow.setFullscreen(enabled);
+    if (enabled) await overlayWindow.setFocus();
+  };
+
+  const openMainAndHideOverlay = async () => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const overlayWindow = getCurrentWindow();
+    await overlayWindow.setFullscreen(false);
+    await emitTo("main", "overlay:closed");
+    await overlayWindow.hide();
+    const main = await Window.getByLabel("main");
+    await main?.show();
+    await main?.setFocus();
+  };
+
   const dragOrOpenControls = async (event: React.MouseEvent) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("[data-overlay-control]")) return;
     if (!("__TAURI_INTERNALS__" in window)) return;
     if (event.detail >= 2) {
+      if (payload.presentationMode) {
+        await openMainAndHideOverlay();
+        return;
+      }
       const main = await Window.getByLabel("main");
       await main?.show();
       await main?.setFocus();
@@ -166,9 +199,11 @@ export function OverlayWindow() {
     </div>
   );
 
-  return <div data-tauri-drag-region className={`overlay-root position-${payload.settings.position}`} onMouseDown={(event) => void dragOrOpenControls(event)}>
+  const controlsForMode = payload.presentationMode ? null : controls;
+
+  return <div data-tauri-drag-region className={`overlay-root position-${payload.settings.position} ${payload.presentationMode ? "presentation" : ""}`} onMouseDown={(event) => void dragOrOpenControls(event)}>
     <div className="overlay-content visible">
-      <OverlayText key={`${payload.settings.fontSize}:${repaintKey}`} sourceText={payload.sourceText} translatedText={payload.translatedText} settings={payload.settings} controls={controls} />
+      <OverlayText key={`${payload.settings.fontSize}:${payload.presentationMode ? "presentation" : "overlay"}:${repaintKey}`} sourceText={payload.sourceText} translatedText={payload.translatedText} settings={payload.settings} fullscreenSettings={payload.fullscreenSettings} sourceLanguage={payload.sourceLanguage} targetLanguage={payload.targetLanguage} presentationLeftLanguage={payload.presentationLeftLanguage} presentationRightLanguage={payload.presentationRightLanguage} final={payload.final} presentationMode={Boolean(payload.presentationMode)} controls={controlsForMode} />
     </div>
   </div>;
 }

@@ -42,6 +42,8 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
   const audioHistory = useRef(new Uint8Array(0));
   const switching = useRef(false);
   const translationGeneration = useRef(0);
+  const presentationMode = useRef(false);
+  const presentationLanguages = useRef<{ left: LanguageCode; right: LanguageCode } | null>(null);
   const performSwitchRef = useRef<((request: TranslationSwitchRequest, mode: AppSettings["mode"], reason: "manual" | "smart-language-detection", confidence?: number) => Promise<void>) | null>(null);
   const lastOverlay = useRef({ translatedText: "Listening…", final: false, sourceText: undefined as string | undefined });
   const [starting, setStarting] = useState(false);
@@ -63,10 +65,14 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       translatedText,
       final,
       settings: currentSettings.overlay,
+      fullscreenSettings: currentSettings.fullscreen,
       sourceLanguage: currentSettings.sourceLanguage,
       targetLanguage: currentSettings.targetLanguage,
       mode: currentSettings.mode,
       switching: isSwitching,
+      presentationMode: presentationMode.current,
+      presentationLeftLanguage: presentationLanguages.current?.left,
+      presentationRightLanguage: presentationLanguages.current?.right,
     };
     await emitTo("overlay", "overlay:update", payload);
   }, []);
@@ -225,7 +231,7 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     });
   };
 
-  const start = async () => {
+  const start = async (asPresentation = false) => {
     if (starting) return;
     setConnection("idle");
     if (!settings.geminiApiKey.trim()) {
@@ -233,6 +239,10 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       return;
     }
     setStarting(true);
+    presentationMode.current = asPresentation;
+    presentationLanguages.current = asPresentation
+      ? { left: settings.sourceLanguage, right: settings.targetLanguage }
+      : null;
     try {
       audioHistory.current = new Uint8Array(0);
       await audio.current.start(settings.microphoneDeviceId, { onLevel: setAudioLevel, onChunk: (chunk) => {
@@ -254,11 +264,13 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       startSession(settings);
       if (isTauri()) {
         const overlay = await Window.getByLabel("overlay");
-        if (settings.overlay.position === "custom" && settings.overlay.customX !== undefined && settings.overlay.customY !== undefined) {
+        await overlay?.setFullscreen(asPresentation);
+        if (!asPresentation && settings.overlay.position === "custom" && settings.overlay.customX !== undefined && settings.overlay.customY !== undefined) {
           await overlay?.setPosition(new PhysicalPosition(settings.overlay.customX, settings.overlay.customY));
         }
         await invoke("set_overlay_click_through", { enabled: false });
         await overlay?.show();
+        if (asPresentation) await overlay?.setFocus();
         setOverlayVisible(true);
         await publishOverlay("Listening…", false, undefined, settings);
         await getCurrentWindow().hide();
@@ -284,10 +296,14 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
       });
       setConnection("error", message);
       if (isTauri()) {
+        const overlay = await Window.getByLabel("overlay");
+        await overlay?.setFullscreen(false);
+        await overlay?.hide();
         await getCurrentWindow().show();
         await getCurrentWindow().setFocus();
-        await (await Window.getByLabel("overlay"))?.hide();
       }
+      presentationMode.current = false;
+      presentationLanguages.current = null;
     } finally {
       setStarting(false);
     }
@@ -299,6 +315,8 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     detector.current.reset();
     audioHistory.current = new Uint8Array(0);
     client.current.close();
+    presentationMode.current = false;
+    presentationLanguages.current = null;
     setAudioLevel(0);
     const finished = finishSession();
     lastOverlay.current = { translatedText: "Listening…", final: false, sourceText: undefined };
@@ -306,7 +324,9 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     if (isTauri()) {
       await invoke("set_overlay_click_through", { enabled: settings.overlay.clickThrough });
       await emitTo("overlay", "overlay:reset");
-      await (await Window.getByLabel("overlay"))?.hide();
+      const overlay = await Window.getByLabel("overlay");
+      await overlay?.setFullscreen(false);
+      await overlay?.hide();
       setOverlayVisible(false);
       await getCurrentWindow().show();
       await getCurrentWindow().setFocus();
@@ -319,6 +339,9 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
     if (isTauri()) {
       const overlay = await Window.getByLabel("overlay");
       if (next) {
+        presentationMode.current = false;
+        presentationLanguages.current = null;
+        await overlay?.setFullscreen(false);
         await overlay?.show();
       } else {
         await emitTo("overlay", "overlay:reset");
@@ -329,8 +352,11 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
 
   const testOverlay = async () => {
     setOverlayVisible(true);
+    presentationMode.current = false;
+    presentationLanguages.current = null;
     if (isTauri()) {
       const overlay = await Window.getByLabel("overlay");
+      await overlay?.setFullscreen(false);
       await overlay?.show();
       await invoke("set_overlay_click_through", { enabled: false });
       await publishOverlay("Hello, thank you for joining the meeting.", true, "Xin chào, cảm ơn bạn đã tham gia cuộc họp.", settings);
@@ -363,7 +389,14 @@ export function ControlPanel({ navigate }: { navigate: (route: Route) => void })
         <div className={active ? "mic-orbit active" : "mic-orbit"}><div className="wave left" /> <Mic size={35} /> <div className="wave right" /></div>
         <h2>{active ? "Listening now" : "Your meeting, understood"}</h2>
         <p>{active ? "Speak naturally — translation is streaming live." : "Start a session and keep the conversation moving."}</p>
-        <button className={active ? "primary-button stop" : "primary-button"} disabled={starting} onClick={() => void (active ? stop() : start())}>{active ? <CircleStop size={19} /> : <Play size={19} fill="currentColor" />}{starting ? "Starting…" : active ? "End meeting" : "Start meeting"}</button>
+        {active ? (
+          <button className="primary-button stop" disabled={starting} onClick={() => void stop()}><CircleStop size={19} />End meeting</button>
+        ) : (
+          <div className="meeting-start-actions">
+            <button className="primary-button" disabled={starting} onClick={() => void start(false)}><Play size={19} fill="currentColor" />{starting ? "Starting…" : "Start with overlay"}</button>
+            <button className="secondary-button presentation-start" disabled={starting} onClick={() => void start(true)}><Play size={18} fill="currentColor" />Start fullscreen</button>
+          </div>
+        )}
         {error ? <span className="inline-error">{error}{error.includes("Settings") || error.includes("API key") ? <button onClick={() => navigate("settings")}>Open Settings</button> : null}</span> : null}
       </div>
       <div className="device-row">

@@ -16,6 +16,14 @@ export const defaultSettings: AppSettings = {
     backgroundOpacity: 0.35, maxLines: 3, displayDurationMs: 6000,
     animation: "fade", clickThrough: true, bilingualEnabled: true,
   },
+  fullscreen: {
+    sourceFontSize: 46,
+    targetFontSize: 46,
+    sourceTextColor: "#e8eef7",
+    targetTextColor: "#ffffff",
+    historyOrder: "newest-bottom",
+    maxHistoryItems: 4,
+  },
 };
 
 interface AppState {
@@ -56,6 +64,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...defaultSettings.overlay,
             ...persisted.overlay,
             maxLines: Math.min(5, Math.max(2, persisted.overlay?.maxLines ?? defaultSettings.overlay.maxLines)),
+          },
+          fullscreen: {
+            ...defaultSettings.fullscreen,
+            ...persisted.fullscreen,
+            sourceFontSize: Math.min(88, Math.max(28, persisted.fullscreen?.sourceFontSize ?? defaultSettings.fullscreen.sourceFontSize)),
+            targetFontSize: Math.min(112, Math.max(36, persisted.fullscreen?.targetFontSize === 64 ? defaultSettings.fullscreen.targetFontSize : persisted.fullscreen?.targetFontSize ?? defaultSettings.fullscreen.targetFontSize)),
+            maxHistoryItems: Math.min(8, Math.max(1, persisted.fullscreen?.maxHistoryItems ?? defaultSettings.fullscreen.maxHistoryItems)),
           },
         }
       : defaultSettings;

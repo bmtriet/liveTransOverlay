@@ -23,6 +23,15 @@ export interface OverlaySettings {
   bilingualEnabled: boolean;
 }
 
+export interface FullscreenMeetingSettings {
+  sourceFontSize: number;
+  targetFontSize: number;
+  sourceTextColor: string;
+  targetTextColor: string;
+  historyOrder: "newest-bottom" | "newest-top";
+  maxHistoryItems: number;
+}
+
 export interface AppSettings {
   geminiApiKey: string;
   model: string;
@@ -32,6 +41,7 @@ export interface AppSettings {
   mode: TranslationMode;
   microphoneDeviceId?: string;
   overlay: OverlaySettings;
+  fullscreen: FullscreenMeetingSettings;
 }
 
 export interface TranscriptSegment {
@@ -75,10 +85,14 @@ export interface OverlayUpdatePayload {
   translatedText: string;
   final: boolean;
   settings: OverlaySettings;
+  fullscreenSettings?: FullscreenMeetingSettings;
   sourceLanguage: LanguageCode;
   targetLanguage: LanguageCode;
   mode: TranslationMode;
   switching?: boolean;
+  presentationMode?: boolean;
+  presentationLeftLanguage?: LanguageCode;
+  presentationRightLanguage?: LanguageCode;
 }
 
 export interface TranslationSwitchRequest {

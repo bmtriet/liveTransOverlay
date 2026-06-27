@@ -72,6 +72,14 @@ export function SettingsPage({
       ...current,
       overlay: { ...current.overlay, [key]: value },
     }));
+  const setFullscreen = <K extends keyof AppSettings["fullscreen"]>(
+    key: K,
+    value: AppSettings["fullscreen"][K],
+  ) =>
+    setDraft((current) => ({
+      ...current,
+      fullscreen: { ...current.fullscreen, [key]: value },
+    }));
   const save = async () => {
     updateSettings(draft);
     await saveSettings();
@@ -421,6 +429,74 @@ export function SettingsPage({
                 </button>
               ))}
             </div>
+          </div>
+        </section>
+        <section className="settings-section fullscreen-settings">
+          <div className="settings-title">
+            <span>04</span>
+            <div>
+              <h2>Fullscreen meeting</h2>
+              <p>Presentation-style two-column view for rooms and demos.</p>
+            </div>
+          </div>
+          <div className="form-grid">
+            <label>
+              <span>Source font - {draft.fullscreen.sourceFontSize}px</span>
+              <input
+                type="range"
+                min="28"
+                max="88"
+                value={draft.fullscreen.sourceFontSize}
+                onChange={(e) => setFullscreen("sourceFontSize", Number(e.target.value))}
+              />
+            </label>
+            <label>
+              <span>Translation font - {draft.fullscreen.targetFontSize}px</span>
+              <input
+                type="range"
+                min="36"
+                max="112"
+                value={draft.fullscreen.targetFontSize}
+                onChange={(e) => setFullscreen("targetFontSize", Number(e.target.value))}
+              />
+            </label>
+            <label>
+              <span>Source text color</span>
+              <input
+                type="color"
+                value={draft.fullscreen.sourceTextColor}
+                onChange={(e) => setFullscreen("sourceTextColor", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Translation text color</span>
+              <input
+                type="color"
+                value={draft.fullscreen.targetTextColor}
+                onChange={(e) => setFullscreen("targetTextColor", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Caption order</span>
+              <select
+                value={draft.fullscreen.historyOrder}
+                onChange={(e) => setFullscreen("historyOrder", e.target.value as AppSettings["fullscreen"]["historyOrder"])}
+              >
+                <option value="newest-bottom">Newest at bottom</option>
+                <option value="newest-top">Newest at top</option>
+              </select>
+            </label>
+            <label>
+              <span>Lines kept - {draft.fullscreen.maxHistoryItems}</span>
+              <input
+                type="range"
+                min="1"
+                max="8"
+                step="1"
+                value={draft.fullscreen.maxHistoryItems}
+                onChange={(e) => setFullscreen("maxHistoryItems", Number(e.target.value))}
+              />
+            </label>
           </div>
         </section>
       </div>
