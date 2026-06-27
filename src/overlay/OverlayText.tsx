@@ -19,7 +19,7 @@ interface OverlayTextProps {
 
 const fallbackFullscreenSettings: FullscreenMeetingSettings = {
   sourceFontSize: 46,
-  targetFontSize: 64,
+  targetFontSize: 46,
   sourceTextColor: "#e8eef7",
   targetTextColor: "#ffffff",
   historyOrder: "newest-bottom",
